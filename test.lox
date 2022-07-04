@@ -1,0 +1,4 @@
+var a = 5;
+print a;
+print true;
+print 2 + 1;
