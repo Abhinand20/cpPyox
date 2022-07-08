@@ -57,6 +57,15 @@ std::string fix_pointer(std::string field){
     std::string type = trim(split(field," ")[0]);
     std::string name = trim(split(field," ")[1]);
     std::ostringstream out;
+
+    bool close_bracket = false;
+
+    if (type.substr(0, 12) == "std::vector<") {
+        out << "std::vector<";
+        type = type.substr(12, type.length() - 13); // ignores closing '>'
+        close_bracket = true;
+    }
+
     // If its a pointer to base class, convert to shared_ptr
     if(type.back() == '*'){
         type = type.substr(0,type.end() - type.begin() - 1);
@@ -64,7 +73,8 @@ std::string fix_pointer(std::string field){
     } else {
         out << type;
     }
-
+    
+    if(close_bracket) out << ">";
     out << " " << name;
 
     return out.str();
@@ -171,21 +181,22 @@ int main(int argc, char** argv){
     std::string output_dir = argv[1];
     
     // (out_dir,base_name,types)
-    defineAst(output_dir, "Expr", {
-        "Assign   : Token name, Expr* value",
-        "Binary   : Expr* left, Token op, Expr* right",
-        "Unary    : Token op, Expr* right",
-        "Literal  : std::any value",
-        "Grouping : Expr* expression",
-        "Ternary  : Expr* left, Expr* middle, Expr* right, Token leftOp, Token middleOp",
-        "Variable : Token name"
-    });
+    // defineAst(output_dir, "Expr", {
+    //     "Assign   : Token name, Expr* value",
+    //     "Binary   : Expr* left, Token op, Expr* right",
+    //     "Unary    : Token op, Expr* right",
+    //     "Literal  : std::any value",
+    //     "Grouping : Expr* expression",
+    //     "Ternary  : Expr* left, Expr* middle, Expr* right, Token leftOp, Token middleOp",
+    //     "Variable : Token name"
+    // });
 
-    // defineAst(output_dir, "Stmt", {
-    //     "Expression : Expr* expression",
-    //     "Print      : Expr* expression",
-    //     "Var        : Token name, Expr* initializer",
-    // }
-    // );
+    defineAst(output_dir, "Stmt", {
+        "Block      : std::vector<Stmt*> statements",
+        "Expression : Expr* expression",
+        "Print      : Expr* expression",
+        "Var        : Token name, Expr* initializer"
+    }
+    );
     return 0;
 }

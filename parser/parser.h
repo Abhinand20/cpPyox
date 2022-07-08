@@ -19,7 +19,8 @@ This "recursive descent parser" (TOP-DOWN) follows the following grammar (preced
     #) varDecl        → "var" IDENTIFIER ( "=" comma )? ";" ;
     
     // General grammar for parsing statements
-    *) statement      → exprStmt | printStmt ;
+    *) statement      → exprStmt | printStmt | block;
+    *) block          → "{" declaration* "}" ;
     *) exprStmt       → comma ";" ; (OR expression ";" ;)
     *) printStmt      → "print" expression ";" ;
     
@@ -169,6 +170,7 @@ private:
     std::shared_ptr<Stmt> statement();  
     std::shared_ptr<Stmt> printStatement();  
     std::shared_ptr<Stmt> expressionStatement();  
+    std::vector<std::shared_ptr<Stmt>> block();  
     std::shared_ptr<Expr> comma();      // 0th grammar rule
     std::shared_ptr<Expr> assignment();  
     std::shared_ptr<Expr> ternary();    // +0th grammar rule
@@ -224,7 +226,9 @@ std::shared_ptr<Stmt> Parser::varDeclaration(){
 
 std::shared_ptr<Stmt> Parser::statement(){
     if(match(PRINT)) return printStatement();
-
+    
+    if(match(LEFT_BRACE)) return std::make_shared<Block>(block());
+    
     return expressionStatement();
 }
 
@@ -234,10 +238,23 @@ std::shared_ptr<Stmt> Parser::expressionStatement(){
 
     return std::make_shared<Expression>(expr);
 }
+
+// Parse block statements
+std::vector<std::shared_ptr<Stmt>> Parser::block(){
+    std::vector<std::shared_ptr<Stmt>> statements;
+
+    while(!check(RIGHT_BRACE) && !isAtEnd()) {
+        statements.push_back(declaration());
+    }
+    
+    consume(RIGHT_BRACE, "Expect '}' after block.");
+
+    return statements;
+}
+
 std::shared_ptr<Stmt> Parser::printStatement(){
     std::shared_ptr<Expr> value = expression();
     consume(SEMICOLON, "Expect ';' after value.");
-
     return std::make_shared<Print>(value);
 }
 

@@ -31,6 +31,12 @@ public:
         }
     }
 
+    std::any visitBlockStmt(std::shared_ptr<Block> stmt) override {
+        // Create a new environment with the current one as enclosing (For nesting/shadowing)
+        executeBlock(stmt->statements, std::make_shared<Environment>(environment) );
+        return {};
+    }
+
     std::any visitExpressionStmt(std::shared_ptr<Expression> stmt) override {
         // Statements do not produce values, so we evaluate the expression and dont return anythin
         evaluate(stmt->expression);
@@ -186,6 +192,29 @@ private:
     
     void execute(std::shared_ptr<Stmt> stmt){
         stmt->accept(*this);
+    }
+
+    // Execute a list of statements in the context of a given environment
+    void executeBlock(std::vector<std::shared_ptr<Stmt>> statements, std::shared_ptr<Environment> environment){
+        // Store the actual env. to restore the interpreter state
+        // Bcs blocks will be executed in their own environment
+
+        std::shared_ptr<Environment> previous = this->environment; 
+        // Try and catch used here to restore the state even if the program fails
+        // Throw the error after restoring
+        try{
+            // Use the newly created environment for the block
+            this->environment = environment;
+
+            for(const std::shared_ptr<Stmt>& statement : statements)
+                execute(statement);
+
+        } catch(...) {
+            this->environment = previous;
+            throw;
+        }
+
+        this->environment = previous;
     }
 
     std::any evaluate(std::shared_ptr<Expr> expr){
