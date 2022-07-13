@@ -37,6 +37,16 @@ public:
         return {};
     }
 
+    std::any visitIfStmt(std::shared_ptr<If> stmt) override {
+        if(isTruthy(evaluate(stmt->condition))) {
+            execute(stmt->thenBranch);
+        } else if (stmt->elseBranch != nullptr) {
+            execute(stmt->elseBranch);
+        }
+
+        return {};
+    }
+
     std::any visitExpressionStmt(std::shared_ptr<Expression> stmt) override {
         // Statements do not produce values, so we evaluate the expression and dont return anythin
         evaluate(stmt->expression);
@@ -62,6 +72,15 @@ public:
         return {};
     }
 
+    // Evaluate while control flow
+    std::any visitWhileStmt(std::shared_ptr<While> stmt) override {
+        while(isTruthy(evaluate(stmt->condition))) {
+            execute(stmt->body);
+        }
+
+        return {};
+    }
+
     // Evaluate assignment statements
     std::any visitAssignExpr(std::shared_ptr<Assign> expr) override {
         std::any value = evaluate(expr->value);
@@ -74,6 +93,18 @@ public:
     // Evaluate Literals : directly return value
     std::any visitLiteralExpr(std::shared_ptr<Literal> expr) override {
         return expr->value; // Check if we need to type_cast this before returning
+    }
+
+    std::any visitLogicalExpr(std::shared_ptr<Logical> expr) override {
+        std::any left = evaluate(expr->left);
+
+        if(expr->op.type == OR){
+            if(isTruthy(left)) return left; // left gives true and if its ||, we return left (true)
+        } else {
+            if(!isTruthy(left)) return left; // left gives false and if its &&, we return left (false)
+        }
+
+        return evaluate(expr->right); // Return right finally only if all left conditions are met
     }
 
     // Evaluate parentheses : recursively evaluate the expression inside 
@@ -223,7 +254,7 @@ private:
 
     // false and null are considered to be Falsey, rest all truthy
     // eg. if(1) -> true ; if(null) -> false
-    bool isTruthy(std::any& obj){
+    bool isTruthy(const std::any& obj){
         auto& value_type = obj.type();
 
         if(value_type == typeid(bool)) return std::any_cast<bool>(obj);

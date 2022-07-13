@@ -16,18 +16,24 @@ This "recursive descent parser" (TOP-DOWN) follows the following grammar (preced
     // Grammar for variable/functions/classes declarations
     #) program        → declaration* EOF ;
     #) declaration    → varDecl | statement ;
-    #) varDecl        → "var" IDENTIFIER ( "=" comma )? ";" ;
+    #) varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
     
     // General grammar for parsing statements
-    *) statement      → exprStmt | printStmt | block;
-    *) block          → "{" declaration* "}" ;
-    *) exprStmt       → comma ";" ; (OR expression ";" ;)
+    *) statement      → exprStmt | forStmt | ifStmt | printStmt | whileStmt |block;
+    *) exprStmt       → expression ";" ;
+    *) forStmt        → "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
+    *) ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
     *) printStmt      → "print" expression ";" ;
+    *) whileStmt      → "while" "(" expression ")" statement ;
+    *) block          → "{" declaration* "}" ;
     
+
+    1) expression     → comma ;
     0) comma          → assignment ( (',') assignment )*
    +0) assignment     → IDENTIFIER "=" assignment | ternanry ;
-   ++0) ternary       → ( expression "?" expression : )* expression
-    1) expression     → equality ;
+   +0) ternary       → ( logic_or "?" expression : )* expression
+   +0) logic_or       → logic_and ("or" logic_and)* ;
+   +0) logic_and      → equality ("and" equality)* ;
     2) equality       → comparison ( ( "!=" | "==" ) comparison )* ;
     3) comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
     4) term           → factor ( ( "-" | "+" ) factor )* ;
@@ -169,10 +175,15 @@ private:
     std::shared_ptr<Stmt> varDeclaration();
     std::shared_ptr<Stmt> statement();  
     std::shared_ptr<Stmt> printStatement();  
+    std::shared_ptr<Stmt> ifStatement();  
+    std::shared_ptr<Stmt> whileStatement();  
+    std::shared_ptr<Stmt> forStatement();  
     std::shared_ptr<Stmt> expressionStatement();  
     std::vector<std::shared_ptr<Stmt>> block();  
     std::shared_ptr<Expr> comma();      // 0th grammar rule
     std::shared_ptr<Expr> assignment();  
+    std::shared_ptr<Expr> Or();  
+    std::shared_ptr<Expr> And();  
     std::shared_ptr<Expr> ternary();    // +0th grammar rule
     std::shared_ptr<Expr> expression(); // 1st grammar rule
     std::shared_ptr<Expr> equality();   // 2nd grammar rule
@@ -216,7 +227,7 @@ std::shared_ptr<Stmt> Parser::varDeclaration(){
     std::shared_ptr<Expr> initializer = nullptr;
     if(match(EQUAL)){
         // initializer = expression();
-        initializer = comma();
+        initializer = expression();
     }
 
     consume(SEMICOLON, "Expect ';' after variable declaration.");
@@ -227,13 +238,19 @@ std::shared_ptr<Stmt> Parser::varDeclaration(){
 std::shared_ptr<Stmt> Parser::statement(){
     if(match(PRINT)) return printStatement();
     
+    if(match(WHILE)) return whileStatement();
+    
+    if(match(FOR)) return forStatement();
+
     if(match(LEFT_BRACE)) return std::make_shared<Block>(block());
+
+    if(match(IF)) return ifStatement();
     
     return expressionStatement();
 }
 
 std::shared_ptr<Stmt> Parser::expressionStatement(){
-    std::shared_ptr<Expr> expr = comma();
+    std::shared_ptr<Expr> expr = expression();
     consume(SEMICOLON, "Exprect ';' after value.");
 
     return std::make_shared<Expression>(expr);
@@ -258,6 +275,85 @@ std::shared_ptr<Stmt> Parser::printStatement(){
     return std::make_shared<Print>(value);
 }
 
+
+std::shared_ptr<Stmt> Parser::whileStatement(){
+    consume(LEFT_PAREN, "Expect '(' after 'while'.");
+    std::shared_ptr<Expr> condition = expression();
+    consume(RIGHT_PAREN,"Expect ')' after condition.");
+    std::shared_ptr<Stmt> body = statement();
+
+    return std::make_shared<While>(condition,body);
+}
+
+// The for statement is de-sugared to the native while statement. Re-using same methods
+std::shared_ptr<Stmt> Parser::forStatement(){
+    consume(LEFT_PAREN, "Expect '(' after 'for'.");
+    
+    // Parse initializer/expression if present
+    std::shared_ptr<Stmt> initializer;
+    if(match(SEMICOLON)) {
+        initializer = nullptr;
+    } else if(match(VAR)){
+        initializer = varDeclaration();
+    } else {
+        initializer = expressionStatement();
+    }
+
+    // Parse condition
+    std::shared_ptr<Expr> condition = nullptr;
+    if(!check(SEMICOLON)) {
+        condition = expression();
+    }
+
+    consume(SEMICOLON, "Expect ';' after loop condition.");
+
+    // Parse Incrementer
+    std::shared_ptr<Expr> increment = nullptr;
+    if(!check(SEMICOLON)){
+        increment = expression();
+    }
+
+    consume(RIGHT_PAREN, "Expect ')' after for clauses.");
+
+    // Parse body
+    std::shared_ptr<Stmt> body = statement();
+
+    // Piece together the "for components" into a while statement
+    if(increment != nullptr){
+        body = std::make_shared<Block>(std::vector<std::shared_ptr<Stmt>>{body, std::make_shared<Expression>(increment)});
+    }
+
+    if(condition == nullptr) condition = std::make_shared<Literal>(true);
+
+    
+    body = std::make_shared<While>(condition,body);
+
+    if(initializer != nullptr){
+        body = std::make_shared<Block>(std::vector<std::shared_ptr<Stmt>>{initializer,body});
+    }
+
+    return body;
+}
+
+std::shared_ptr<Stmt> Parser::ifStatement(){
+    consume(LEFT_PAREN, "Expect '(' after 'if'.");
+    std::shared_ptr<Expr> condition = expression();
+    consume(RIGHT_PAREN, "Expect ')' after if condition.");
+
+    std::shared_ptr<Stmt> thenBranch = statement();
+    
+    std::shared_ptr<Stmt> elseBranch = nullptr;
+    if(match(ELSE)){
+        elseBranch = statement();
+    }
+
+    return std::make_shared<If>(condition,thenBranch,elseBranch);
+}
+
+std::shared_ptr<Expr> Parser::expression(){
+    return comma();
+}
+
 std::shared_ptr<Expr> Parser::comma(){
     // std::shared_ptr<Expr> expr = expression();
     std::shared_ptr<Expr> expr = assignment();
@@ -276,7 +372,7 @@ std::shared_ptr<Expr> Parser::comma(){
 }
 
 std::shared_ptr<Expr> Parser::assignment(){
-    std::shared_ptr<Expr> expr = expression(); // To get the left identifier
+    std::shared_ptr<Expr> expr = ternary(); // To get the left identifier
 
     if(match(EQUAL)){
         Token equals = previous();
@@ -298,7 +394,7 @@ std::shared_ptr<Expr> Parser::assignment(){
 }
 
 std::shared_ptr<Expr> Parser::ternary(){
-    std::shared_ptr<Expr> expr = expression();
+    std::shared_ptr<Expr> expr = Or();
 
     // Are we in a conditional block?
     if(match(QUESTION)){
@@ -325,13 +421,35 @@ std::shared_ptr<Expr> Parser::ternary(){
     return expr;
 
 }
+
+std::shared_ptr<Expr> Parser::Or(){
+    std::shared_ptr<Expr> expr = And();
+
+    while(match(OR)){
+        Token op = previous();
+        std::shared_ptr<Expr> right = And();
+        expr = std::make_shared<Logical>(expr,op,right);
+    }
+
+    return expr;
+}
+
+std::shared_ptr<Expr> Parser::And(){
+    std::shared_ptr<Expr> expr = equality();
+
+    while(match(AND)){
+        Token op = previous();
+        std::shared_ptr<Expr> right = equality();
+        expr = std::make_shared<Logical>(expr,op,right);
+    }
+
+    return expr;
+}
+
 ///// START : Binary operators (Lowest precedence) /////
 
 // 1) & 2) -> equality -> comparision ( ("!=") | ("==") comparision )*
 // Example : (sequence of operations) (== | !=) (sequence of operations)
-std::shared_ptr<Expr> Parser::expression(){
-    return equality();
-}
 
 // We keep parse the expressions on the left until we reach == or !=
 // Then we parse the expressions on the right
